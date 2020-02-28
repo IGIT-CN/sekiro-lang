@@ -6,12 +6,19 @@ import com.lang.sekiro.netty.protocol.SekiroNatMessage;
 import com.lang.sekiross.netty.ChannelRegistry;
 
 import com.lang.sekiross.netty.task.TaskRegistry;
+import io.netty.channel.Channel;
 import org.apache.commons.lang3.StringUtils;
 
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.HttpRequest;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+
+import java.io.IOException;
 
 @ChannelHandler.Sharable
 @Slf4j
@@ -59,6 +66,8 @@ public class NatServerChannelHandler extends SimpleChannelInboundHandler<SekiroN
         heartbeatMessage.setType(SekiroNatMessage.TYPE_HEARTBEAT);
         log.info("response heartbeat message {}", ctx.channel());
         ctx.channel().writeAndFlush(heartbeatMessage);
+        // 心跳回调
+//        handler(ctx);
 
 //        String clientId = ctx.channel().attr(Constants.CLIENT_KEY).get();
 //        if (StringUtils.isBlank(clientId)) {
@@ -75,6 +84,8 @@ public class NatServerChannelHandler extends SimpleChannelInboundHandler<SekiroN
             return;
         }
         ChannelRegistry.getInstance().registryClient(clientIdAndGroup, ctx.channel());
+        // 上线回调
+//        handler(ctx);
     }
 
     @Override
@@ -83,9 +94,31 @@ public class NatServerChannelHandler extends SimpleChannelInboundHandler<SekiroN
         ctx.close();
     }
 
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        //TODO release all connect attached with this channel
-        super.channelInactive(ctx);
+    private void handler(ChannelHandlerContext ctx){
+        Channel channel = ctx.channel();
+        String group = ChannelRegistry.getInstance().getOther().get(channel.remoteAddress());
+//        ChannelRegistry.getInstance().getOther().remove(channel.remoteAddress());
+//        System.out.println(channel.remoteAddress()+ group + " 下线");
+        // 开启线程处理
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                // /rich/open/alipayHeart?alipayNum=支付宝账号
+                String url="http://139.129.119.106:10000/rich/open/alipayHeart?alipayNum="+group.split("_")[1];
+                log.info("心跳准备 >>> "+url);
+                try {
+                    HttpGet httpGet = new HttpGet(url);
+                    HttpResponse httpResponse = new DefaultHttpClient().execute(httpGet);//其中HttpGet是HttpUriRequst的子类
+                    if (httpResponse.getStatusLine().getStatusCode()==200){
+                        log.info(group.split("_")[1]+">>>>>>心跳回调成功");
+                    }else {
+                        log.info(group.split("_")[1]+">>>>>>心跳回调失败");
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        }).start();
     }
 }
